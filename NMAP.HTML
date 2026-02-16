@@ -1,0 +1,52 @@
+#define CROW_MAIN  // Define once in main file [page:0]
+#include "crow_all.h"  // Path to Crow header [page:0]
+
+#include <string>
+#include <sstream>
+
+int main() {
+    crow::SimpleApp app;
+
+    // Home page with scan form
+    CROW_ROUTE(app, "/")([](){
+        return R"(
+<!DOCTYPE html>
+<html><head><title>Nmap Scanner</title></head>
+<body>
+<h1>Basic Nmap Network Scanner</h1>
+<form action="/scan" method="POST">
+    Target (e.g., scanme.nmap.org): <input type="text" name="target" value="scanme.nmap.org"><br>
+    <input type="submit" value="Scan">
+</form>
+</body></html>
+        )";
+    });
+
+    // Scan endpoint: Run Nmap, capture output, display as HTML
+    CROW_ROUTE(app, "/scan").methods("POST"_method)([](const crow::request& req){
+        auto form = crow::form_param_value(req.body, "target");
+        std::string target = form == "" ? "scanme.nmap.org" : form;
+
+        std::ostringstream cmd;
+        cmd << "nmap -sV -oN - " << target;  // -sV for services, -oN - for stdout [web:11][web:13]
+        std::ostringstream output;
+        FILE* pipe = popen(cmd.str().c_str(), "r");
+        if (!pipe) return crow::response(500, "Scan failed");
+
+        char buffer[128];
+        while (fgets(buffer, sizeof buffer, pipe) != NULL) {
+            output << std::string(buffer);
+        }
+        pclose(pipe);
+
+        std::string html = R"(
+<!DOCTYPE html>
+<html><head><title>Scan Results</title><pre style="background:#f4f4f4;padding:20px;">
+)" + output.str() + R"(
+</pre><a href="/">New Scan</a></body></html>
+        )";
+        return html;
+    });
+
+    app.port(8080).multithreaded().run();
+}
